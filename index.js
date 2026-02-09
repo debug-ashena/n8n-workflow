@@ -8,11 +8,15 @@ const AUTH_TOKEN = process.env.AUTH_TOKEN || 'default-token';
 
 app.post('/scrape', async (req, res) => {
   const { url, company, selector } = req.body;
-  const token = req.headers['x-auth-token'];
+
+  const token = req.headers['x-auth-token']; 
   
-  if (token !== AUTH_TOKEN) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  if (!token || token.trim() !== AUTH_TOKEN.trim()) {
+     console.log('Expected token:', AUTH_TOKEN);
+     console.log('Received token:', token);
+  return res.status(401).json({ error: 'Unauthorized' });
+   }
+  
 
   try {
     // دریافت صفحه
