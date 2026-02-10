@@ -4,10 +4,8 @@ const cheerio = require('cheerio');
 const app = express();
 app.use(express.json());
 
-// ⚠️ این خط کلید است: باید از محیط بخواند
 const AUTH_TOKEN = (process.env.AUTH_TOKEN || '').trim();
 
-// اندپوینت دیباگ برای چک کردن توکن
 app.get('/debug', (req, res) => {
   res.json({
     auth_token_exists: !!AUTH_TOKEN,
@@ -18,9 +16,6 @@ app.get('/debug', (req, res) => {
 
 app.post('/scrape', async (req, res) => {
   const token = (req.headers['x-auth-token'] || '').trim();
-  
-  console.log('🔍 Received token length:', token.length);
-  console.log('🔍 AUTH_TOKEN length in env:', AUTH_TOKEN.length);
   
   if (!AUTH_TOKEN) {
     console.error('❌ AUTH_TOKEN is EMPTY in environment variables!');
@@ -37,7 +32,7 @@ app.post('/scrape', async (req, res) => {
   }
 
   try {
-    const { url, company } = req.body;
+    const { url, company, selector } = req.body;
     
     if (!url || !company) {
       return res.status(400).json({ error: 'url and company are required' });
@@ -53,19 +48,30 @@ app.post('/scrape', async (req, res) => {
     const $ = cheerio.load(response.data);
     const plans = [];
 
-    // استخراج ساده برای تست
-    $('table tr').each((i, el) => {
-      if (i === 0) return; // اسکیپ هدر
-      const cells = $(el).find('td, th');
-      if (cells.length >= 2) {
-        plans.push({
-          name: $(cells[0]).text().trim(),
-          price: $(cells.last()).text().trim()
-        });
-      }
-    });
-
-    if (plans.length === 0) {
+    // استخراج داده‌ها از جدول Irpower
+    const rows = $('table tr');
+    
+    if (rows.length > 0) {
+      console.log(`Found ${rows.length} rows in table`);
+      
+      // پردازش هر سطر جدول
+      rows.each((i, row) => {
+        const cells = $(row).find('td, th');
+        
+        if (cells.length >= 2) {
+          const name = $(cells[0]).text().trim().replace(/\s+/g, ' ');
+          const value = $(cells[1]).text().trim().replace(/\s+/g, ' ');
+          
+          // فقط سطرهای دارای داده را اضافه کن
+          if (name && value) {
+            plans.push({
+              name: name,
+              value: value
+            });
+          }
+        }
+      });
+    } else {
       // فول‌بک: استخراج متن کل بدنه
       plans.push({
         raw_html: $('body').html().substring(0, 300)
@@ -77,14 +83,15 @@ app.post('/scrape', async (req, res) => {
       company: company,
       url: url,
       scrapedAt: new Date().toISOString(),
-      plans: plans,
+      raw_plans: plans, // داده‌های خام
       count: plans.length
     });
 
   } catch (error) {
     console.error('❌ Scraping error:', error.message);
     res.status(500).json({ 
-      error: error.message
+      error: error.message,
+      stack: error.stack
     });
   }
 });
