@@ -4,24 +4,35 @@ const cheerio = require('cheerio');
 const app = express();
 app.use(express.json());
 
-// دریافت توکن از محیط و حذف فاصله‌های اضافه
-const AUTH_TOKEN = (process.env.AUTH_TOKEN || 'default-token').trim();
+// ⚠️ این خط کلید است: باید از محیط بخواند
+const AUTH_TOKEN = (process.env.AUTH_TOKEN || '').trim();
+
+// اندپوینت دیباگ برای چک کردن توکن
+app.get('/debug', (req, res) => {
+  res.json({
+    auth_token_exists: !!AUTH_TOKEN,
+    auth_token_length: AUTH_TOKEN.length,
+    port: process.env.PORT || 3000
+  });
+});
 
 app.post('/scrape', async (req, res) => {
-  // خواندن توکن از هدر و حذف فاصله‌های اضافه
   const token = (req.headers['x-auth-token'] || '').trim();
   
   console.log('🔍 Received token length:', token.length);
-  console.log('🔍 Expected token length:', AUTH_TOKEN.length);
+  console.log('🔍 AUTH_TOKEN length in env:', AUTH_TOKEN.length);
+  
+  if (!AUTH_TOKEN) {
+    console.error('❌ AUTH_TOKEN is EMPTY in environment variables!');
+    return res.status(500).json({ error: 'Server misconfiguration: AUTH_TOKEN not set' });
+  }
   
   if (token !== AUTH_TOKEN) {
-    console.log('❌ Token mismatch!');
-    console.log('Received (first 10 chars):', token.substring(0, 10) + '...');
-    console.log('Expected (first 10 chars):', AUTH_TOKEN.substring(0, 10) + '...');
+    console.error('❌ Token mismatch!');
     return res.status(401).json({ 
       error: 'Unauthorized',
-      receivedLength: token.length,
-      expectedLength: AUTH_TOKEN.length
+      received_length: token.length,
+      expected_length: AUTH_TOKEN.length
     });
   }
 
@@ -42,14 +53,24 @@ app.post('/scrape', async (req, res) => {
     const $ = cheerio.load(response.data);
     const plans = [];
 
-    // استخراج متن ساده برای تست اولیه
-    const textContent = $('body').text().substring(0, 500);
-    
-    plans.push({
-      company: company,
-      raw_text: textContent,
-      url: url
+    // استخراج ساده برای تست
+    $('table tr').each((i, el) => {
+      if (i === 0) return; // اسکیپ هدر
+      const cells = $(el).find('td, th');
+      if (cells.length >= 2) {
+        plans.push({
+          name: $(cells[0]).text().trim(),
+          price: $(cells.last()).text().trim()
+        });
+      }
     });
+
+    if (plans.length === 0) {
+      // فول‌بک: استخراج متن کل بدنه
+      plans.push({
+        raw_html: $('body').html().substring(0, 300)
+      });
+    }
 
     res.json({
       success: true,
@@ -63,8 +84,7 @@ app.post('/scrape', async (req, res) => {
   } catch (error) {
     console.error('❌ Scraping error:', error.message);
     res.status(500).json({ 
-      error: error.message,
-      stack: error.stack
+      error: error.message
     });
   }
 });
@@ -72,5 +92,6 @@ app.post('/scrape', async (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Scraper ready on port ${PORT}`);
+  console.log(`🔑 AUTH_TOKEN set: ${AUTH_TOKEN ? 'YES' : 'NO'}`);
   console.log(`🔑 AUTH_TOKEN length: ${AUTH_TOKEN.length}`);
 });
