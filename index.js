@@ -38,7 +38,13 @@ app.post('/scrape', async (req, res) => {
       return res.status(400).json({ error: 'url and company are required' });
     }
 
-    const response = await axios.get(url, {
+    // ✅ پاک‌سازی URL از فاصله‌های اضافه
+    const cleanUrl = url.trim();
+    
+    console.log('🔍 Scraping URL:', cleanUrl);
+    console.log('🏢 Company:', company);
+
+    const response = await axios.get(cleanUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       },
@@ -48,13 +54,12 @@ app.post('/scrape', async (req, res) => {
     const $ = cheerio.load(response.data);
     const plans = [];
 
-    // استخراج داده‌ها از جدول Irpower
+    // استخراج داده‌ها از جدول
     const rows = $('table tr');
     
     if (rows.length > 0) {
-      console.log(`Found ${rows.length} rows in table`);
+      console.log(`✅ Found ${rows.length} rows in table`);
       
-      // پردازش هر سطر جدول
       rows.each((i, row) => {
         const cells = $(row).find('td, th');
         
@@ -62,7 +67,6 @@ app.post('/scrape', async (req, res) => {
           const name = $(cells[0]).text().trim().replace(/\s+/g, ' ');
           const value = $(cells[1]).text().trim().replace(/\s+/g, ' ');
           
-          // فقط سطرهای دارای داده را اضافه کن
           if (name && value) {
             plans.push({
               name: name,
@@ -72,7 +76,6 @@ app.post('/scrape', async (req, res) => {
         }
       });
     } else {
-      // فول‌بک: استخراج متن کل بدنه
       plans.push({
         raw_html: $('body').html().substring(0, 300)
       });
@@ -81,14 +84,16 @@ app.post('/scrape', async (req, res) => {
     res.json({
       success: true,
       company: company,
-      url: url,
+      url: cleanUrl,
       scrapedAt: new Date().toISOString(),
-      raw_plans: plans, // داده‌های خام
+      raw_plans: plans,
       count: plans.length
     });
 
   } catch (error) {
     console.error('❌ Scraping error:', error.message);
+    console.error('❌ Error stack:', error.stack);
+    
     res.status(500).json({ 
       error: error.message,
       stack: error.stack
