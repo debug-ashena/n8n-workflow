@@ -45,11 +45,11 @@ app.post('/scrape', async (req, res) => {
     console.log('🏢 Company:', company);
 
     const response = await axios.get(cleanUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      timeout: 15000
-    });
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+  },
+  timeout: 60000 // افزایش timeout به 60 ثانیه
+  });
 
     const $ = cheerio.load(response.data);
     const plans = [];
