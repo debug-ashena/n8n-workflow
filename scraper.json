@@ -1,0 +1,383 @@
+{
+  "name": "Hosting-Scraper",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// پاکسازی و نگهداری همه فیلدها\nconst items = $input.all();\nconst cleanedItems = [];\n\nitems.forEach(item => {\n    // اگه آیتم به صورت عجیب ذخیره شده (مثل قبلی)\n    if (item.json && typeof item.json === 'object') {\n        // بررسی کن ببین فیلدها چطور ذخیره شدن\n        const newItem = { json: {} };\n        \n        // اگه کلید عجیب \"company_name, website_url, ...\" وجود داره\n        const keys = Object.keys(item.json);\n        if (keys.length === 1 && keys[0].includes(',')) {\n            // این همون فرمت قبلیه با هدرهای یکجا\n            const headers = keys[0].split(',').map(h => h.trim());\n            const values = item.json[keys[0]].split(',').map(v => v.trim());\n            \n            headers.forEach((header, index) => {\n                newItem.json[header] = values[index] || '';\n            });\n        } else {\n            // فرمت عادی - همه فیلدها رو کپی کن\n            Object.assign(newItem.json, item.json);\n        }\n        \n        cleanedItems.push(newItem);\n    }\n});\n\nconsole.log(`✅ Cleaned ${cleanedItems.length} items`);\nif (cleanedItems.length > 0) {\n    console.log('Sample item:', JSON.stringify(cleanedItems[0].json, null, 2));\n}\n\nreturn cleanedItems;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        -192
+      ],
+      "id": "d15c92da-3b24-4526-a729-791f71548637",
+      "name": "Clean Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// تبدیل CSV به JSON\nconst items = $input.all();\nconst result = [];\n\nitems.forEach(item => {\n    // استخراج CSV از ورودی\n    let csv = '';\n    if (item.json?.data) {\n        csv = item.json.data;\n    } else if (typeof item.json === 'string') {\n        csv = item.json;\n    } else {\n        csv = JSON.stringify(item.json);\n    }\n    \n    // جدا کردن خطوط\n    const lines = csv.split(/\\r?\\n/).filter(line => line.trim());\n    if (lines.length < 2) return;\n    \n    // استخراج هدرها از خط اول\n    const headers = lines[0].split(',').map(h => h.trim());\n    \n    // پردازش ردیف‌ها\n    for (let i = 1; i < lines.length; i++) {\n        const values = lines[i].split(',').map(v => v.trim());\n        const newItem = { json: {} };\n        \n        headers.forEach((header, index) => {\n            newItem.json[header] = values[index] || '';\n        });\n        \n        result.push(newItem);\n    }\n});\n\nconsole.log(`✅ ${result.length} items created`);\nreturn result;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        -192
+      ],
+      "id": "1f5da3b5-bad9-4f78-8b91-117e7bcaddf8",
+      "name": "Convert Data",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://195.248.243.185:3000/scrape",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-Auth-Token",
+              "value": "31705dd0bcd7346860601a0d4f374b923492e3e19325ed32ec16f691ab5986fb"
+            },
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"url\": \"{{ $json.url }}\",\n  \"company\": \"{{ $json.company }}\",\n  \"selector\": \"{{ $json.selector }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1120,
+        -336
+      ],
+      "id": "d89fb86f-7fdc-4794-8fb1-e13fdfac25c1",
+      "name": "Scrape Data",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "https://docs.google.com/spreadsheets/d/1XrTaKqNnVMeubIK6y9hQIYBEEXCXVL6hBCRaG3mDb-M/export?format=csv&gid=0",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            },
+            {
+              "name": "Accept",
+              "value": "text/csv,text/plain"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -448,
+        -192
+      ],
+      "id": "70fff29d-06ab-4a30-99f2-0ec41aa474c1",
+      "name": "Read Sheet"
+    },
+    {
+      "parameters": {
+        "jsCode": "// پردازش نتایج اسکرپینگ\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const data = item.json;\n  \n  // بررسی موفقیت درخواست\n  if (data.status === 'success' && data.data) {\n    results.push({\n      json: {\n        company_name: data.company || 'Unknown',\n        website_url: data.url,\n        scraped_data: data.data,\n        scraped_at: new Date().toISOString(),\n        service_type: data.service_type || 'general',\n        status: 'success'\n      }\n    });\n  } else {\n    // ثبت خطا برای بررسی بعدی\n    console.error(`❌ Failed to scrape ${data.company || data.url}:`, data.error || 'Unknown error');\n    results.push({\n      json: {\n        company_name: data.company || 'Unknown',\n        website_url: data.url,\n        scraped_data: null,\n        scraped_at: new Date().toISOString(),\n        error: data.error || 'Scraping failed',\n        status: 'failed'\n      }\n    });\n  }\n}\n\nconsole.log(`✅ Processed ${results.length} scraping results`);\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        -336
+      ],
+      "id": "15bb3704-e5e0-4bbb-a929-3dc5ff36cbe8",
+      "name": "Process Result"
+    },
+    {
+      "parameters": {
+        "options": {
+          "reset": false
+        }
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        224,
+        -192
+      ],
+      "id": "87519c27-ca52-489c-9c92-325b556325d1",
+      "name": "Loop Over Items",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1216,
+        -96
+      ],
+      "id": "67272816-7494-4bc3-8cc6-d84caf7d5076",
+      "name": "Wait",
+      "webhookId": "60024c10-ad0c-4f77-9508-3370e93907b6"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "1XrTaKqNnVMeubIK6y9hQIYBEEXCXVL6hBCRaG3mDb-M",
+          "mode": "id"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1792,
+        -264
+      ],
+      "id": "28375ff6-252e-45a1-be71-ab9abf2734bd",
+      "name": "Append row in sheet",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5efe5163-1e2f-4733-afa0-3389e103193d",
+              "name": "url",
+              "value": "={{ $json['website_url'] }}",
+              "type": "string"
+            },
+            {
+              "id": "2e7cb2b5-d168-4c89-a619-bcf587f362e2",
+              "name": "company",
+              "value": "={{ $json['company_name'] }}",
+              "type": "string"
+            },
+            {
+              "id": "695d612d-ad2d-4738-85db-99e0ac0a515f",
+              "name": "selector",
+              "value": "={{ $json['css_selector'] }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        -336
+      ],
+      "id": "11bc2f81-9fb0-4be2-8ad4-1821272750e9",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "jsCode": "// نود دیباگ - بررسی خروجی Edit Fields\nconst items = $input.all();\n\nconsole.log('=== OUTPUT OF EDIT FIELDS ===');\nconsole.log('Number of items:', items.length);\n\nif (items.length > 0) {\n    console.log('All fields with values:');\n    Object.keys(items[0].json).forEach(key => {\n        console.log(`  ${key}: \"${items[0].json[key]}\"`);\n    });\n    \n    // بررسی فیلدهای مورد نظر با نام‌های احتمالی\n    const possibleUrlFields = ['url', 'website_url', 'website_url:', 'URL'];\n    const possibleCompanyFields = ['company', 'company_name', 'company_name:', 'COMPANY'];\n    \n    console.log('\\n🔍 Looking for URL field:');\n    possibleUrlFields.forEach(field => {\n        if (items[0].json[field] !== undefined) {\n            console.log(`  Found \"${field}\": \"${items[0].json[field]}\"`);\n        }\n    });\n    \n    console.log('\\n🔍 Looking for Company field:');\n    possibleCompanyFields.forEach(field => {\n        if (items[0].json[field] !== undefined) {\n            console.log(`  Found \"${field}\": \"${items[0].json[field]}\"`);\n        }\n    });\n}\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        -336
+      ],
+      "id": "7e5fd7b5-5a98-47a3-aeeb-b6182b39d0c2",
+      "name": "debug2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// این نود تضمین می‌کند که داخل حلقه، آیتم درست پردازش شود\nconst items = $input.all();\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        -336
+      ],
+      "id": "f680d4e3-5196-40aa-b305-4c857a2debc1",
+      "name": "Fix Loop Item"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Convert Data": {
+      "main": [
+        [
+          {
+            "node": "Clean Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean Data": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Sheet": {
+      "main": [
+        [
+          {
+            "node": "Convert Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Data": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fix Loop Item",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Result": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "debug2": {
+      "main": [
+        [
+          {
+            "node": "Scrape Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "debug2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fix Loop Item": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false,
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "5f33571b-02d7-466f-b2ca-ea256abf27f6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "03e2c22b29fb74756f1fcd155035847a08e691b2096de8e902f85c7cc2724789"
+  },
+  "id": "tcnBnT56NDkDnedj",
+  "tags": []
+}
